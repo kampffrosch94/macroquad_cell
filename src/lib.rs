@@ -404,7 +404,8 @@ impl Context {
 
         let color = Self::DEFAULT_BG_COLOR;
 
-        get_quad_context().clear(Some((color.r, color.g, color.b, color.a)), None, None);
+        self.quad_context
+            .clear(Some((color.r, color.g, color.b, color.a)), None, None);
         self.gl.reset();
     }
 
@@ -415,17 +416,19 @@ impl Context {
 
         //self.ui_context.draw(get_quad_context(), &mut self.gl);
         let screen_mat = self.pixel_perfect_projection_matrix();
-        self.gl.draw(get_quad_context(), screen_mat);
+        self.gl.draw(&mut *self.quad_context, screen_mat);
 
-        get_quad_context().commit_frame();
+        self.quad_context.commit_frame();
 
         #[cfg(one_screenshot)]
         {
-            get_context().counter += 1;
-            if get_context().counter == 3 {
-                crate::prelude::get_screen_data().export_png("screenshot.png");
-                panic!("screenshot successfully saved to `screenshot.png`");
-            }
+            with_context(|context| {
+                context.counter += 1;
+                if context.counter == 3 {
+                    crate::prelude::get_screen_data().export_png("screenshot.png");
+                    panic!("screenshot successfully saved to `screenshot.png`");
+                }
+            });
         }
 
         // telemetry::end_gpu_query();
@@ -439,7 +442,7 @@ impl Context {
 
         self.quit_requested = false;
 
-        self.textures.garbage_collect(get_quad_context());
+        self.textures.garbage_collect(&mut *self.quad_context);
 
         // remove all touches that were Ended or Cancelled
         self.touches.retain(|_, touch| {
@@ -476,7 +479,7 @@ impl Context {
     pub(crate) fn perform_render_passes(&mut self) {
         let matrix = self.projection_matrix();
 
-        self.gl.draw(get_quad_context(), matrix);
+        self.gl.draw(&mut *self.quad_context, matrix);
     }
 }
 
@@ -510,16 +513,6 @@ where
         .try_lock()
         .expect("We have aliasing mutable access.");
     f(get_context())
-}
-
-fn get_quad_context() -> &'static mut dyn miniquad::RenderingBackend {
-    thread_assert::same_thread();
-
-    unsafe {
-        assert!(CONTEXT.is_some());
-    }
-
-    unsafe { &mut *CONTEXT.as_mut().unwrap().quad_context }
 }
 
 fn with_quad_context<R, F>(f: F) -> R
@@ -953,11 +946,9 @@ impl Window {
             Box::new(Stage {
                 main_future: Box::pin(async {
                     future.await;
-                    unsafe {
-                        if let Some(ctx) = CONTEXT.as_mut() {
-                            ctx.gl.reset();
-                        }
-                    }
+                    with_context(|ctx| {
+                        ctx.gl.reset();
+                    });
                 }),
             })
         });

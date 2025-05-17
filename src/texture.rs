@@ -8,6 +8,7 @@ use crate::{
 pub use crate::quad_gl::FilterMode;
 use crate::quad_gl::{DrawMode, Vertex};
 use glam::{vec2, Vec2};
+use miniquad::RenderingBackend;
 use slotmap::{TextureIdSlotMap, TextureSlotId};
 use std::sync::Arc;
 
@@ -540,7 +541,7 @@ pub fn draw_texture_ex(
         let id = context.raw_miniquad_id(&texture.texture);
         let texture_opt = context
             .texture_batcher
-            .get(id)
+            .get(&mut *context.quad_context, id)
             .map(|(batched_texture, uv)| {
                 let id = context.raw_miniquad_id(&texture.texture);
                 let (batched_width, batched_height) = context.quad_context.texture_size(id);
@@ -933,9 +934,13 @@ impl Batcher {
         self.unbatched.push(texture.weak_clone());
     }
 
-    pub fn get(&mut self, texture: miniquad::TextureId) -> Option<(Texture2D, Rect)> {
+    pub fn get(
+        &mut self,
+        ctx: &mut (dyn RenderingBackend + 'static),
+        texture: miniquad::TextureId,
+    ) -> Option<(Texture2D, Rect)> {
         let id = SpriteKey::Texture(texture);
-        let uv_rect = self.atlas.get_uv_rect(id)?;
+        let uv_rect = self.atlas.get_uv_rect(ctx, id)?;
         Some((Texture2D::unmanaged(self.atlas.texture()), uv_rect))
     }
 }

@@ -4,10 +4,10 @@ use std::collections::HashMap;
 
 use crate::{
     color::Color,
-    get_context, get_quad_context,
+    get_context,
     math::{vec3, Rect},
     texture::{Image, TextureHandle},
-    Error,
+    with_quad_context, Error,
 };
 
 use crate::color::WHITE;
@@ -282,10 +282,9 @@ pub async fn load_ttf_font(path: &str) -> Result<Font, Error> {
 /// let font = load_ttf_font_from_bytes(include_bytes!("font.ttf"));
 /// ```
 pub fn load_ttf_font_from_bytes(bytes: &[u8]) -> Result<Font, Error> {
-    let atlas = Arc::new(Mutex::new(Atlas::new(
-        get_quad_context(),
-        miniquad::FilterMode::Linear,
-    )));
+    let atlas = with_quad_context(|ctx| {
+        Arc::new(Mutex::new(Atlas::new(ctx, miniquad::FilterMode::Linear)))
+    });
 
     let mut font = Font::load_from_bytes(atlas.clone(), bytes)?;
 

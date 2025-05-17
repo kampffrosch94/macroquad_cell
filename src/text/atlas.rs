@@ -1,4 +1,6 @@
-use crate::{get_context, get_quad_context, math::Rect, texture::Image, Color};
+use miniquad::RenderingBackend;
+
+use crate::{get_context, math::Rect, quad_gl::QuadGl, texture::Image, with_quad_context, Color};
 
 use std::collections::HashMap;
 
@@ -69,9 +71,10 @@ impl Atlas {
     }
 
     pub fn set_filter(&mut self, filter_mode: miniquad::FilterMode) {
-        let ctx = get_quad_context();
         self.filter = filter_mode;
-        ctx.texture_set_filter(self.texture, filter_mode, miniquad::MipmapFilterMode::None);
+        with_quad_context(|ctx| {
+            ctx.texture_set_filter(self.texture, filter_mode, miniquad::MipmapFilterMode::None);
+        });
     }
 
     pub fn get(&self, key: SpriteKey) -> Option<Sprite> {
@@ -87,29 +90,39 @@ impl Atlas {
     }
 
     pub fn texture(&mut self) -> miniquad::TextureId {
-        let ctx = get_quad_context();
-        if self.dirty {
-            self.dirty = false;
-            let (texture_width, texture_height) = ctx.texture_size(self.texture);
-            if texture_width != self.image.width as _ || texture_height != self.image.height as _ {
-                ctx.delete_texture(self.texture);
+        with_quad_context(|ctx| {
+            if self.dirty {
+                self.dirty = false;
+                let (texture_width, texture_height) = ctx.texture_size(self.texture);
+                if texture_width != self.image.width as _
+                    || texture_height != self.image.height as _
+                {
+                    ctx.delete_texture(self.texture);
 
-                self.texture = ctx.new_texture_from_rgba8(
-                    self.image.width,
-                    self.image.height,
-                    &self.image.bytes[..],
-                );
-                ctx.texture_set_filter(self.texture, self.filter, miniquad::MipmapFilterMode::None);
+                    self.texture = ctx.new_texture_from_rgba8(
+                        self.image.width,
+                        self.image.height,
+                        &self.image.bytes[..],
+                    );
+                    ctx.texture_set_filter(
+                        self.texture,
+                        self.filter,
+                        miniquad::MipmapFilterMode::None,
+                    );
+                }
+
+                ctx.texture_update(self.texture, &self.image.bytes);
             }
 
-            ctx.texture_update(self.texture, &self.image.bytes);
-        }
-
-        self.texture
+            self.texture
+        })
     }
 
-    pub fn get_uv_rect(&self, key: SpriteKey) -> Option<Rect> {
-        let ctx = get_quad_context();
+    pub fn get_uv_rect(
+        &self,
+        ctx: &mut (dyn RenderingBackend + 'static),
+        key: SpriteKey,
+    ) -> Option<Rect> {
         self.get(key).map(|sprite| {
             let (w, h) = ctx.texture_size(self.texture);
 
