@@ -524,6 +524,16 @@ fn get_quad_context() -> &'static mut dyn miniquad::RenderingBackend {
     unsafe { &mut *CONTEXT.as_mut().unwrap().quad_context }
 }
 
+fn with_quad_context<R, F>(f: F) -> R
+where
+    F: FnOnce(&mut dyn miniquad::RenderingBackend) -> R,
+{
+    with_context(|context| {
+        let qc = &mut *context.quad_context;
+        f(qc)
+    })
+}
+
 struct Stage {
     main_future: Pin<Box<dyn Future<Output = ()>>>,
 }
