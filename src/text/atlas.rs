@@ -1,6 +1,6 @@
 use miniquad::RenderingBackend;
 
-use crate::{get_context, math::Rect, quad_gl::QuadGl, texture::Image, with_quad_context, Color};
+use crate::{get_context, math::Rect, texture::Image, with_quad_context, Color};
 
 use std::collections::HashMap;
 
