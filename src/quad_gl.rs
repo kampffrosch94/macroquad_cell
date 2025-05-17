@@ -4,7 +4,10 @@ use miniquad::*;
 
 pub use miniquad::{FilterMode, TextureId as MiniquadTexture, UniformDesc};
 
-use crate::{color::Color, logging::warn, telemetry, texture::Texture2D, tobytes::ToBytes, Error};
+use crate::{
+    color::Color, logging::warn, telemetry, texture::Texture2D, tobytes::ToBytes, with_context,
+    Error,
+};
 
 use std::collections::BTreeMap;
 
@@ -810,8 +813,7 @@ impl QuadGl {
         // get_projection_matrix is a way plugins used to get macroquad's current projection
         // back in the days when projection was a part of static batcher
         // now it is not, so here we go with this hack
-
-        crate::get_context().projection_matrix()
+        with_context(|context| context.projection_matrix())
     }
 
     pub const fn get_active_render_pass(&self) -> Option<RenderPass> {
@@ -831,8 +833,9 @@ impl QuadGl {
     }
 
     pub fn texture(&mut self, texture: Option<&Texture2D>) {
-        let ctx = crate::get_context();
-        self.state.texture = texture.map(|t| ctx.raw_miniquad_id(&t.texture));
+        with_context(|context| {
+            self.state.texture = texture.map(|t| context.raw_miniquad_id(&t.texture));
+        });
     }
 
     pub fn scissor(&mut self, clip: Option<(i32, i32, i32, i32)>) {
