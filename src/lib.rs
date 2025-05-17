@@ -42,6 +42,7 @@ use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::panic::AssertUnwindSafe;
 use std::pin::Pin;
+use std::sync::Mutex;
 
 mod exec;
 mod quad_gl;
@@ -500,10 +501,16 @@ fn get_context() -> &'static mut Context {
     unsafe { CONTEXT.as_mut().unwrap_or_else(|| panic!()) }
 }
 
+/// This is a temporary measure to check for soundness problems.
+/// The endgoal is to use a thread local refcell for the Context.
+static CHECKER: std::sync::Mutex<()> = Mutex::new(());
 fn with_context<R, F>(f: F) -> R
 where
     F: FnOnce(&mut Context) -> R,
 {
+    let _guard = CHECKER
+        .try_lock()
+        .expect("We have aliasing mutable access.");
     f(get_context())
 }
 
