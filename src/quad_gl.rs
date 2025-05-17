@@ -832,10 +832,8 @@ impl QuadGl {
         self.state.depth_test_enable = enable;
     }
 
-    pub fn texture(&mut self, texture: Option<&Texture2D>) {
-        with_context(|context| {
-            self.state.texture = texture.map(|t| context.raw_miniquad_id(&t.texture));
-        });
+    pub fn texture(&mut self, texture: Option<miniquad::TextureId>) {
+        self.state.texture = texture;
     }
 
     pub fn scissor(&mut self, clip: Option<(i32, i32, i32, i32)>) {

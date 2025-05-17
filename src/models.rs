@@ -47,7 +47,11 @@ pub struct Mesh {
 pub fn draw_mesh(mesh: &Mesh) {
     let context = get_context();
 
-    context.gl.texture(mesh.texture.as_ref());
+    let id = mesh
+        .texture
+        .as_ref()
+        .map(|t| context.raw_miniquad_id(&t.texture));
+    context.gl.texture(id);
     context.gl.draw_mode(DrawMode::Triangles);
     context.gl.geometry(&mesh.vertices[..], &mesh.indices[..]);
 }
@@ -124,7 +128,8 @@ pub fn draw_plane(center: Vec3, size: Vec2, texture: Option<&Texture2D>, color: 
 
     {
         let context = get_context();
-        context.gl.texture(texture);
+        let id = texture.map(|t| context.raw_miniquad_id(&t.texture));
+        context.gl.texture(id);
     }
     draw_quad([v1, v2, v3, v4]);
 }
@@ -162,7 +167,8 @@ pub fn draw_affine_parallelogram(
 
     {
         let context = get_context();
-        context.gl.texture(texture);
+        let id = texture.map(|t| context.raw_miniquad_id(&t.texture));
+        context.gl.texture(id);
     }
     draw_quad([v1, v2, v3, v4]);
 }
@@ -212,7 +218,8 @@ pub fn draw_affine_parallelepiped(
 
 pub fn draw_cube(position: Vec3, size: Vec3, texture: Option<&Texture2D>, color: Color) {
     let context = get_context();
-    context.gl.texture(texture);
+    let id = texture.map(|t| context.raw_miniquad_id(&t.texture));
+    context.gl.texture(id);
 
     let (x, y, z) = (position.x, position.y, position.z);
     let (width, height, length) = (size.x, size.y, size.z);
@@ -469,7 +476,8 @@ pub fn draw_sphere_ex(
 
     let scale = vec3(radius, radius, radius);
 
-    context.gl.texture(texture);
+    let id = texture.map(|t| context.raw_miniquad_id(&t.texture));
+    context.gl.texture(id);
     context.gl.draw_mode(params.draw_mode);
 
     for i in 0..rings + 1 {
@@ -613,7 +621,8 @@ pub fn draw_cylinder_ex(
 
     let sides = params.sides;
 
-    context.gl.texture(texture);
+    let id = texture.map(|t| context.raw_miniquad_id(&t.texture));
+    context.gl.texture(id);
     context.gl.draw_mode(params.draw_mode);
 
     use std::f32::consts::PI;
