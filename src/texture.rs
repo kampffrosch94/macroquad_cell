@@ -1,8 +1,8 @@
 //! Loading and rendering textures. Also render textures, per-pixel image manipulations.
 
 use crate::{
-    color::Color, file::load_file, get_context, get_quad_context, math::Rect,
-    text::atlas::SpriteKey, Error,
+    color::Color, file::load_file, math::Rect, text::atlas::SpriteKey, with_context,
+    with_quad_context, Error,
 };
 
 pub use crate::quad_gl::FilterMode;
@@ -377,8 +377,9 @@ impl RenderPass {
 impl Drop for RenderPass {
     fn drop(&mut self) {
         if Arc::strong_count(&self.render_pass) < 2 {
-            let context = get_quad_context();
-            context.delete_render_pass(*self.render_pass);
+            with_quad_context(|context| {
+                context.delete_render_pass(*self.render_pass);
+            });
         }
     }
 }
@@ -407,60 +408,69 @@ pub fn render_target_msaa(width: u32, height: u32) -> RenderTarget {
 }
 
 pub fn render_target_ex(width: u32, height: u32, params: RenderTargetParams) -> RenderTarget {
-    let context = get_context();
-
-    let color_texture = get_quad_context().new_render_texture(miniquad::TextureParams {
-        width,
-        height,
-        sample_count: params.sample_count,
-        ..Default::default()
-    });
-    let depth_texture = if params.depth {
-        Some(
-            get_quad_context().new_render_texture(miniquad::TextureParams {
+    with_context(|context| {
+        let color_texture = context
+            .quad_context
+            .new_render_texture(miniquad::TextureParams {
                 width,
                 height,
-                format: miniquad::TextureFormat::Depth,
                 sample_count: params.sample_count,
                 ..Default::default()
-            }),
-        )
-    } else {
-        None
-    };
-    let render_pass;
-    let texture;
-    if params.sample_count != 0 {
-        let color_resolve_texture =
-            get_quad_context().new_render_texture(miniquad::TextureParams {
-                width,
-                height,
-                ..Default::default()
             });
-        render_pass = get_quad_context().new_render_pass_mrt(
-            &[color_texture],
-            Some(&[color_resolve_texture]),
-            depth_texture,
-        );
-        texture = color_resolve_texture;
-    } else {
-        render_pass = get_quad_context().new_render_pass_mrt(&[color_texture], None, depth_texture);
-        texture = color_texture;
-    }
+        let depth_texture = if params.depth {
+            Some(
+                context
+                    .quad_context
+                    .new_render_texture(miniquad::TextureParams {
+                        width,
+                        height,
+                        format: miniquad::TextureFormat::Depth,
+                        sample_count: params.sample_count,
+                        ..Default::default()
+                    }),
+            )
+        } else {
+            None
+        };
+        let render_pass;
+        let texture;
+        if params.sample_count != 0 {
+            let color_resolve_texture =
+                context
+                    .quad_context
+                    .new_render_texture(miniquad::TextureParams {
+                        width,
+                        height,
+                        ..Default::default()
+                    });
+            render_pass = context.quad_context.new_render_pass_mrt(
+                &[color_texture],
+                Some(&[color_resolve_texture]),
+                depth_texture,
+            );
+            texture = color_resolve_texture;
+        } else {
+            render_pass =
+                context
+                    .quad_context
+                    .new_render_pass_mrt(&[color_texture], None, depth_texture);
+            texture = color_texture;
+        }
 
-    let texture = Texture2D {
-        texture: context.textures.store_texture(texture),
-    };
+        let texture = Texture2D {
+            texture: context.textures.store_texture(texture),
+        };
 
-    let render_pass = RenderPass {
-        color_texture: texture.clone(),
-        depth_texture: None,
-        render_pass: Arc::new(render_pass),
-    };
-    RenderTarget {
-        texture,
-        render_pass,
-    }
+        let render_pass = RenderPass {
+            color_texture: texture.clone(),
+            depth_texture: None,
+            render_pass: Arc::new(render_pass),
+        };
+        RenderTarget {
+            texture,
+            render_pass,
+        }
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -513,94 +523,95 @@ pub fn draw_texture_ex(
     color: Color,
     params: DrawTextureParams,
 ) {
-    let context = get_context();
-
     let [mut width, mut height] = texture.size().to_array();
-
-    let Rect {
-        x: mut sx,
-        y: mut sy,
-        w: mut sw,
-        h: mut sh,
-    } = params.source.unwrap_or(Rect {
-        x: 0.,
-        y: 0.,
-        w: width,
-        h: height,
-    });
-
-    let texture_opt = context
-        .texture_batcher
-        .get(texture)
-        .map(|(batched_texture, uv)| {
-            let [batched_width, batched_height] = batched_texture.size().to_array();
-            sx = ((sx / width) * uv.w + uv.x) * batched_width;
-            sy = ((sy / height) * uv.h + uv.y) * batched_height;
-            sw = (sw / width) * uv.w * batched_width;
-            sh = (sh / height) * uv.h * batched_height;
-
-            width = batched_width;
-            height = batched_height;
-
-            batched_texture
+    with_context(|context| {
+        let Rect {
+            x: mut sx,
+            y: mut sy,
+            w: mut sw,
+            h: mut sh,
+        } = params.source.unwrap_or(Rect {
+            x: 0.,
+            y: 0.,
+            w: width,
+            h: height,
         });
-    let texture = texture_opt.as_ref().unwrap_or(texture);
 
-    let (mut w, mut h) = match params.dest_size {
-        Some(dst) => (dst.x, dst.y),
-        _ => (sw, sh),
-    };
-    let mut x = x;
-    let mut y = y;
-    if params.flip_x {
-        x += w;
-        w = -w;
-    }
-    if params.flip_y {
-        y += h;
-        h = -h;
-    }
+        let id = context.raw_miniquad_id(&texture.texture);
+        let texture_opt = context
+            .texture_batcher
+            .get(id)
+            .map(|(batched_texture, uv)| {
+                let id = context.raw_miniquad_id(&texture.texture);
+                let (batched_width, batched_height) = context.quad_context.texture_size(id);
+                sx = ((sx / width) * uv.w + uv.x) * batched_width as f32;
+                sy = ((sy / height) * uv.h + uv.y) * batched_height as f32;
+                sw = (sw / width) * uv.w * batched_width as f32;
+                sh = (sh / height) * uv.h * batched_height as f32;
 
-    let pivot = params.pivot.unwrap_or(vec2(x + w / 2., y + h / 2.));
-    let m = pivot;
-    let p = [
-        vec2(x, y) - pivot,
-        vec2(x + w, y) - pivot,
-        vec2(x + w, y + h) - pivot,
-        vec2(x, y + h) - pivot,
-    ];
-    let r = params.rotation;
-    let p = [
-        vec2(
-            p[0].x * r.cos() - p[0].y * r.sin(),
-            p[0].x * r.sin() + p[0].y * r.cos(),
-        ) + m,
-        vec2(
-            p[1].x * r.cos() - p[1].y * r.sin(),
-            p[1].x * r.sin() + p[1].y * r.cos(),
-        ) + m,
-        vec2(
-            p[2].x * r.cos() - p[2].y * r.sin(),
-            p[2].x * r.sin() + p[2].y * r.cos(),
-        ) + m,
-        vec2(
-            p[3].x * r.cos() - p[3].y * r.sin(),
-            p[3].x * r.sin() + p[3].y * r.cos(),
-        ) + m,
-    ];
-    #[rustfmt::skip]
-    let vertices = [
-        Vertex::new(p[0].x, p[0].y, 0.,  sx      /width,  sy      /height, color),
-        Vertex::new(p[1].x, p[1].y, 0., (sx + sw)/width,  sy      /height, color),
-        Vertex::new(p[2].x, p[2].y, 0., (sx + sw)/width, (sy + sh)/height, color),
-        Vertex::new(p[3].x, p[3].y, 0.,  sx      /width, (sy + sh)/height, color),
-    ];
-    let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+                width = batched_width as f32;
+                height = batched_height as f32;
 
-    let id = context.raw_miniquad_id(&texture.texture);
-    context.gl.texture(Some(id));
-    context.gl.draw_mode(DrawMode::Triangles);
-    context.gl.geometry(&vertices, &indices);
+                batched_texture
+            });
+        let texture = texture_opt.as_ref().unwrap_or(texture);
+
+        let (mut w, mut h) = match params.dest_size {
+            Some(dst) => (dst.x, dst.y),
+            _ => (sw, sh),
+        };
+        let mut x = x;
+        let mut y = y;
+        if params.flip_x {
+            x += w;
+            w = -w;
+        }
+        if params.flip_y {
+            y += h;
+            h = -h;
+        }
+
+        let pivot = params.pivot.unwrap_or(vec2(x + w / 2., y + h / 2.));
+        let m = pivot;
+        let p = [
+            vec2(x, y) - pivot,
+            vec2(x + w, y) - pivot,
+            vec2(x + w, y + h) - pivot,
+            vec2(x, y + h) - pivot,
+        ];
+        let r = params.rotation;
+        let p = [
+            vec2(
+                p[0].x * r.cos() - p[0].y * r.sin(),
+                p[0].x * r.sin() + p[0].y * r.cos(),
+            ) + m,
+            vec2(
+                p[1].x * r.cos() - p[1].y * r.sin(),
+                p[1].x * r.sin() + p[1].y * r.cos(),
+            ) + m,
+            vec2(
+                p[2].x * r.cos() - p[2].y * r.sin(),
+                p[2].x * r.sin() + p[2].y * r.cos(),
+            ) + m,
+            vec2(
+                p[3].x * r.cos() - p[3].y * r.sin(),
+                p[3].x * r.sin() + p[3].y * r.cos(),
+            ) + m,
+        ];
+        #[rustfmt::skip]
+        let vertices = [
+            Vertex::new(p[0].x, p[0].y, 0.,  sx      /width,  sy      /height, color),
+            Vertex::new(p[1].x, p[1].y, 0., (sx + sw)/width,  sy      /height, color),
+            Vertex::new(p[2].x, p[2].y, 0., (sx + sw)/width, (sy + sh)/height, color),
+            Vertex::new(p[3].x, p[3].y, 0.,  sx      /width, (sy + sh)/height, color),
+        ];
+        let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+
+        let id = context.raw_miniquad_id(&texture.texture);
+        context.gl.texture(Some(id));
+        context.gl.draw_mode(DrawMode::Triangles);
+        context.gl.geometry(&vertices, &indices);
+    });
 }
 
 /// Get pixel data from screen buffer and return an Image (screenshot)
@@ -609,21 +620,23 @@ pub fn get_screen_data() -> Image {
         crate::window::get_internal_gl().flush();
     }
 
-    let context = get_context();
+    with_context(|context| {
+        let texture_id = context
+            .quad_context
+            .new_render_texture(miniquad::TextureParams {
+                width: context.screen_width as _,
+                height: context.screen_height as _,
+                ..Default::default()
+            });
 
-    let texture_id = get_quad_context().new_render_texture(miniquad::TextureParams {
-        width: context.screen_width as _,
-        height: context.screen_height as _,
-        ..Default::default()
-    });
+        let texture = Texture2D {
+            texture: context.textures.store_texture(texture_id),
+        };
 
-    let texture = Texture2D {
-        texture: context.textures.store_texture(texture_id),
-    };
+        texture.grab_screen();
 
-    texture.grab_screen();
-
-    texture.get_texture_data()
+        texture.get_texture_data()
+    })
 }
 
 /// Texture, data stored in GPU memory
@@ -634,8 +647,9 @@ pub struct Texture2D {
 
 impl Drop for TextureSlotGuarded {
     fn drop(&mut self) {
-        let ctx = get_context();
-        ctx.textures.schedule_removed(self.0);
+        with_context(|context| {
+            context.textures.schedule_removed(self.0);
+        });
     }
 }
 
@@ -667,9 +681,7 @@ impl Texture2D {
     /// # }
     /// ```
     pub fn empty() -> Texture2D {
-        let ctx = get_context();
-
-        Texture2D::unmanaged(ctx.gl.white_texture)
+        with_context(|context| Texture2D::unmanaged(context.gl.white_texture))
     }
 
     /// Creates a Texture2D from a slice of bytes that contains an encoded image.
@@ -733,37 +745,42 @@ impl Texture2D {
     /// # }
     /// ```
     pub fn from_rgba8(width: u16, height: u16, bytes: &[u8]) -> Texture2D {
-        let texture = get_quad_context().new_texture_from_rgba8(width, height, bytes);
-        let ctx = get_context();
-        let texture = ctx.textures.store_texture(texture);
-        let texture = Texture2D { texture };
-        texture.set_filter(ctx.default_filter_mode);
+        with_context(|context| {
+            let texture = context
+                .quad_context
+                .new_texture_from_rgba8(width, height, bytes);
+            let texture = context.textures.store_texture(texture);
+            let texture = Texture2D { texture };
+            texture.set_filter(context.default_filter_mode);
 
-        ctx.texture_batcher.add_unbatched(&texture);
+            context.texture_batcher.add_unbatched(&texture);
 
-        texture
+            texture
+        })
     }
 
     /// Uploads [Image] data to this texture.
     pub fn update(&self, image: &Image) {
-        let ctx = get_quad_context();
-        let (width, height) = ctx.texture_size(self.raw_miniquad_id());
+        with_quad_context(|ctx| {
+            let (width, height) = ctx.texture_size(self.raw_miniquad_id());
 
-        assert_eq!(width, image.width as u32);
-        assert_eq!(height, image.height as u32);
+            assert_eq!(width, image.width as u32);
+            assert_eq!(height, image.height as u32);
 
-        ctx.texture_update(self.raw_miniquad_id(), &image.bytes);
+            ctx.texture_update(self.raw_miniquad_id(), &image.bytes);
+        });
     }
 
     // Updates the texture from an array of bytes.
     pub fn update_from_bytes(&self, width: u32, height: u32, bytes: &[u8]) {
-        let ctx = get_quad_context();
-        let (texture_width, texture_height) = ctx.texture_size(self.raw_miniquad_id());
+        with_quad_context(|ctx| {
+            let (texture_width, texture_height) = ctx.texture_size(self.raw_miniquad_id());
 
-        assert_eq!(texture_width, width);
-        assert_eq!(texture_height, height);
+            assert_eq!(texture_width, width);
+            assert_eq!(texture_height, height);
 
-        ctx.texture_update(self.raw_miniquad_id(), bytes);
+            ctx.texture_update(self.raw_miniquad_id(), bytes);
+        });
     }
 
     /// Uploads [Image] data to part of this texture.
@@ -775,39 +792,45 @@ impl Texture2D {
         width: i32,
         height: i32,
     ) {
-        let ctx = get_quad_context();
-
-        ctx.texture_update_part(
-            self.raw_miniquad_id(),
-            x_offset,
-            y_offset,
-            width,
-            height,
-            &image.bytes,
-        );
+        with_quad_context(|ctx| {
+            ctx.texture_update_part(
+                self.raw_miniquad_id(),
+                x_offset,
+                y_offset,
+                width,
+                height,
+                &image.bytes,
+            );
+        })
     }
 
     /// Returns the width of this texture.
     pub fn width(&self) -> f32 {
-        let ctx = get_quad_context();
-        let (width, _) = ctx.texture_size(self.raw_miniquad_id());
+        with_context(|ctx| {
+            let id = ctx.raw_miniquad_id(&self.texture);
+            let (width, _) = ctx.quad_context.texture_size(id);
 
-        width as f32
+            width as f32
+        })
     }
 
     /// Returns the height of this texture.
     pub fn height(&self) -> f32 {
-        let ctx = get_quad_context();
-        let (_, height) = ctx.texture_size(self.raw_miniquad_id());
+        with_context(|ctx| {
+            let id = ctx.raw_miniquad_id(&self.texture);
+            let (_, height) = ctx.quad_context.texture_size(id);
 
-        height as f32
+            height as f32
+        })
     }
 
     pub fn size(&self) -> Vec2 {
-        let ctx = get_quad_context();
-        let (width, height) = ctx.texture_size(self.raw_miniquad_id());
+        with_context(|ctx| {
+            let id = ctx.raw_miniquad_id(&self.texture);
+            let (width, height) = ctx.quad_context.texture_size(id);
 
-        vec2(width as f32, height as f32)
+            vec2(width as f32, height as f32)
+        })
     }
 
     /// Sets the [FilterMode] of this texture.
@@ -824,20 +847,18 @@ impl Texture2D {
     /// # }
     /// ```
     pub fn set_filter(&self, filter_mode: FilterMode) {
-        let ctx = get_quad_context();
-
-        ctx.texture_set_filter(
-            self.raw_miniquad_id(),
-            filter_mode,
-            miniquad::MipmapFilterMode::None,
-        );
+        with_quad_context(|ctx| {
+            ctx.texture_set_filter(
+                self.raw_miniquad_id(),
+                filter_mode,
+                miniquad::MipmapFilterMode::None,
+            );
+        });
     }
 
     /// Returns the handle for this texture.
     pub fn raw_miniquad_id(&self) -> miniquad::TextureId {
-        let ctx = get_context();
-
-        ctx.raw_miniquad_id(&self.texture)
+        with_context(|context| context.raw_miniquad_id(&self.texture))
     }
 
     /// Updates this texture from the screen.
@@ -845,51 +866,53 @@ impl Texture2D {
     pub fn grab_screen(&self) {
         use miniquad::*;
         let texture = self.raw_miniquad_id();
-        let ctx = get_quad_context();
-        let params = ctx.texture_params(texture);
-        let raw_id = match unsafe { ctx.texture_raw_id(texture) } {
-            miniquad::RawId::OpenGl(id) => id,
-            _ => unimplemented!(),
-        };
-        let internal_format = match params.format {
-            TextureFormat::RGB8 => miniquad::gl::GL_RGB,
-            TextureFormat::RGBA8 => miniquad::gl::GL_RGBA,
-            TextureFormat::RGBA16F => miniquad::gl::GL_RGBA,
-            TextureFormat::Depth => miniquad::gl::GL_DEPTH_COMPONENT,
-            TextureFormat::Depth32 => miniquad::gl::GL_DEPTH_COMPONENT,
-            #[cfg(target_arch = "wasm32")]
-            TextureFormat::Alpha => miniquad::gl::GL_ALPHA,
-            #[cfg(not(target_arch = "wasm32"))]
-            TextureFormat::Alpha => miniquad::gl::GL_R8,
-        };
-        unsafe {
-            gl::glBindTexture(gl::GL_TEXTURE_2D, raw_id);
-            gl::glCopyTexImage2D(
-                gl::GL_TEXTURE_2D,
-                0,
-                internal_format,
-                0,
-                0,
-                params.width as _,
-                params.height as _,
-                0,
-            );
-        }
+        with_quad_context(|ctx| {
+            let params = ctx.texture_params(texture);
+            let raw_id = match unsafe { ctx.texture_raw_id(texture) } {
+                miniquad::RawId::OpenGl(id) => id,
+                _ => unimplemented!(),
+            };
+            let internal_format = match params.format {
+                TextureFormat::RGB8 => miniquad::gl::GL_RGB,
+                TextureFormat::RGBA8 => miniquad::gl::GL_RGBA,
+                TextureFormat::RGBA16F => miniquad::gl::GL_RGBA,
+                TextureFormat::Depth => miniquad::gl::GL_DEPTH_COMPONENT,
+                TextureFormat::Depth32 => miniquad::gl::GL_DEPTH_COMPONENT,
+                #[cfg(target_arch = "wasm32")]
+                TextureFormat::Alpha => miniquad::gl::GL_ALPHA,
+                #[cfg(not(target_arch = "wasm32"))]
+                TextureFormat::Alpha => miniquad::gl::GL_R8,
+            };
+            unsafe {
+                gl::glBindTexture(gl::GL_TEXTURE_2D, raw_id);
+                gl::glCopyTexImage2D(
+                    gl::GL_TEXTURE_2D,
+                    0,
+                    internal_format,
+                    0,
+                    0,
+                    params.width as _,
+                    params.height as _,
+                    0,
+                );
+            }
+        });
     }
 
     /// Returns an [Image] from the pixel data in this texture.
     ///
     /// This operation can be expensive.
     pub fn get_texture_data(&self) -> Image {
-        let ctx = get_quad_context();
-        let (width, height) = ctx.texture_size(self.raw_miniquad_id());
-        let mut image = Image {
-            width: width as _,
-            height: height as _,
-            bytes: vec![0; width as usize * height as usize * 4],
-        };
-        ctx.texture_read_pixels(self.raw_miniquad_id(), &mut image.bytes);
-        image
+        with_quad_context(|ctx| {
+            let (width, height) = ctx.texture_size(self.raw_miniquad_id());
+            let mut image = Image {
+                width: width as _,
+                height: height as _,
+                bytes: vec![0; width as usize * height as usize * 4],
+            };
+            ctx.texture_read_pixels(self.raw_miniquad_id(), &mut image.bytes);
+            image
+        })
     }
 }
 
@@ -910,8 +933,8 @@ impl Batcher {
         self.unbatched.push(texture.weak_clone());
     }
 
-    pub fn get(&mut self, texture: &Texture2D) -> Option<(Texture2D, Rect)> {
-        let id = SpriteKey::Texture(texture.raw_miniquad_id());
+    pub fn get(&mut self, texture: miniquad::TextureId) -> Option<(Texture2D, Rect)> {
+        let id = SpriteKey::Texture(texture);
         let uv_rect = self.atlas.get_uv_rect(id)?;
         Some((Texture2D::unmanaged(self.atlas.texture()), uv_rect))
     }
@@ -923,18 +946,18 @@ impl Batcher {
 /// NOTE: the GPU memory and texture itself in Texture2D will still be allocated
 /// and Texture->Image conversions will work with Texture2D content, not the atlas
 pub fn build_textures_atlas() {
-    let context = get_context();
+    with_context(|context| {
+        for texture in context.texture_batcher.unbatched.drain(0..) {
+            let sprite: Image = texture.get_texture_data();
+            let id = SpriteKey::Texture(texture.raw_miniquad_id());
 
-    for texture in context.texture_batcher.unbatched.drain(0..) {
-        let sprite: Image = texture.get_texture_data();
-        let id = SpriteKey::Texture(texture.raw_miniquad_id());
+            context.texture_batcher.atlas.cache_sprite(id, sprite);
+        }
 
-        context.texture_batcher.atlas.cache_sprite(id, sprite);
-    }
-
-    let texture = context.texture_batcher.atlas.texture();
-    let (w, h) = get_quad_context().texture_size(texture);
-    // crate::telemetry::log_string(&format!("Atlas: {w} {h}"));
+        // let texture = context.texture_batcher.atlas.texture();
+        // let (w, h) = context.quad_context.texture_size(texture);
+        // crate::telemetry::log_string(&format!("Atlas: {w} {h}"));
+    });
 }
 
 #[doc(hidden)]
@@ -942,14 +965,15 @@ pub fn build_textures_atlas() {
 /// Fonts store their characters as ID's in the atlas.
 /// There fore resetting the atlas will render all fonts unusable.
 pub unsafe fn reset_textures_atlas() {
-    let context = get_context();
-    context.fonts_storage = crate::text::FontsStorage::new(&mut *context.quad_context);
-    context.texture_batcher = Batcher::new(&mut *context.quad_context);
+    with_context(|context| {
+        context.fonts_storage = crate::text::FontsStorage::new(&mut *context.quad_context);
+        context.texture_batcher = Batcher::new(&mut *context.quad_context);
+    });
 }
 
 pub fn set_default_filter_mode(filter: FilterMode) {
-    let context = get_context();
-
-    context.default_filter_mode = filter;
-    context.texture_batcher.atlas.set_filter(filter);
+    with_context(|context| {
+        context.default_filter_mode = filter;
+        context.texture_batcher.atlas.set_filter(filter);
+    });
 }
