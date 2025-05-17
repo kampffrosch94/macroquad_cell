@@ -1,6 +1,6 @@
 //! Cross platform system time access and FPS counters.
 
-use crate::{get_context, text::draw_text};
+use crate::{get_context, text::draw_text, with_context};
 
 /// Draws the current FPS on the screen. For extra customization, please use `draw_text` instead.
 pub fn draw_fps() {
@@ -14,13 +14,7 @@ pub fn get_fps() -> i32 {
 
 /// Returns duration in seconds of the last frame drawn
 pub fn get_frame_time() -> f32 {
-    let context = get_context();
-
-    if crate::experimental::scene::in_fixed_update() {
-        crate::experimental::scene::fixed_frame_time()
-    } else {
-        context.frame_time as f32
-    }
+    with_context(|context| context.frame_time as f32)
 }
 
 /// Returns elapsed wall-clock time in seconds since start
