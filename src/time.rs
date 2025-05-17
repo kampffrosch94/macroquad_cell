@@ -9,9 +9,7 @@ pub fn draw_fps() {
 
 /// Returns current FPS
 pub fn get_fps() -> i32 {
-    let context = get_context();
-
-    (1. / context.frame_time) as i32
+    with_context(|context| (1. / context.frame_time) as i32)
 }
 
 /// Returns duration in seconds of the last frame drawn
@@ -33,7 +31,5 @@ pub fn get_frame_time() -> f32 {
 /// for all game objects, you should call this function once
 /// save the value and reuse it throughout your code.
 pub fn get_time() -> f64 {
-    let context = get_context();
-
-    miniquad::date::now() - context.start_time
+    with_context(|context| miniquad::date::now() - context.start_time)
 }

@@ -7,7 +7,7 @@ use crate::{
     get_context,
     math::{vec3, Rect},
     texture::{Image, TextureHandle},
-    with_quad_context, Error,
+    with_context, with_quad_context, Error,
 };
 
 use crate::color::WHITE;
@@ -498,31 +498,32 @@ impl FontsStorage {
 
 /// Returns macroquads default font.
 pub fn get_default_font() -> Font {
-    let context = get_context();
-    context.fonts_storage.default_font.clone()
+    with_context(|context| context.fonts_storage.default_font.clone())
 }
 
 /// Replaces macroquads default font with `font`.
 pub fn set_default_font(font: Font) {
-    let context = get_context();
-    context.fonts_storage.default_font = font;
+    with_context(|context| {
+        context.fonts_storage.default_font = font;
+    })
 }
 
 /// From given font size in world space gives
 /// (font_size, font_scale and font_aspect) params to make rasterized font
 /// looks good in currently active camera
 pub fn camera_font_scale(world_font_size: f32) -> (u16, f32, f32) {
-    let context = get_context();
-    let (scr_w, scr_h) = miniquad::window::screen_size();
-    let cam_space = context
-        .projection_matrix()
-        .inverse()
-        .transform_vector3(vec3(2., 2., 0.));
-    let (cam_w, cam_h) = (cam_space.x.abs(), cam_space.y.abs());
+    with_context(|context| {
+        let (scr_w, scr_h) = miniquad::window::screen_size();
+        let cam_space = context
+            .projection_matrix()
+            .inverse()
+            .transform_vector3(vec3(2., 2., 0.));
+        let (cam_w, cam_h) = (cam_space.x.abs(), cam_space.y.abs());
 
-    let screen_font_size = world_font_size * scr_h / cam_h;
+        let screen_font_size = world_font_size * scr_h / cam_h;
 
-    let font_size = screen_font_size as u16;
+        let font_size = screen_font_size as u16;
 
-    (font_size, cam_h / scr_h, scr_h / scr_w * cam_w / cam_h)
+        (font_size, cam_h / scr_h, scr_h / scr_w * cam_w / cam_h)
+    })
 }

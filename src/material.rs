@@ -1,6 +1,8 @@
 //! Custom materials - shaders, uniforms.
 
-use crate::{get_context, quad_gl::GlPipeline, texture::Texture2D, tobytes::ToBytes, Error};
+use crate::{
+    get_context, quad_gl::GlPipeline, texture::Texture2D, tobytes::ToBytes, with_context, Error,
+};
 use miniquad::{PipelineParams, UniformDesc};
 use std::sync::Arc;
 
@@ -30,17 +32,21 @@ impl Material {
     /// "name" should be from "uniforms" list used for material creation.
     /// Otherwise uniform value would be silently ignored.
     pub fn set_uniform<T>(&self, name: &str, uniform: T) {
-        get_context().gl.set_uniform(self.pipeline.0, name, uniform);
+        with_context(|context| {
+            context.gl.set_uniform(self.pipeline.0, name, uniform);
+        });
     }
 
     pub fn set_uniform_array<T: ToBytes>(&self, name: &str, uniform: &[T]) {
-        get_context()
-            .gl
-            .set_uniform_array(self.pipeline.0, name, uniform);
+        with_context(|context| {
+            context.gl.set_uniform_array(self.pipeline.0, name, uniform);
+        });
     }
 
     pub fn set_texture(&self, name: &str, texture: Texture2D) {
-        get_context().gl.set_texture(self.pipeline.0, name, texture);
+        with_context(|context| {
+            context.gl.set_texture(self.pipeline.0, name, texture);
+        });
     }
 }
 

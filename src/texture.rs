@@ -1,8 +1,8 @@
 //! Loading and rendering textures. Also render textures, per-pixel image manipulations.
 
 use crate::{
-    color::Color, file::load_file, math::Rect, text::atlas::SpriteKey, with_context,
-    with_quad_context, Error,
+    color::Color, file::load_file, get_context, math::Rect, text::atlas::SpriteKey, with_context,
+    with_quad_context, Context, Error,
 };
 
 pub use crate::quad_gl::FilterMode;
@@ -28,8 +28,10 @@ pub(crate) enum TextureHandle {
 
 pub(crate) struct TexturesContext {
     textures: TextureIdSlotMap,
+    // make it some kind of mutex or lockfree queue for running in destructors
     removed: Vec<TextureSlotId>,
 }
+
 impl TexturesContext {
     pub fn new() -> TexturesContext {
         TexturesContext {
@@ -648,9 +650,7 @@ pub struct Texture2D {
 
 impl Drop for TextureSlotGuarded {
     fn drop(&mut self) {
-        with_context(|context| {
-            context.textures.schedule_removed(self.0);
-        });
+        get_context().textures.schedule_removed(self.0);
     }
 }
 
@@ -746,18 +746,25 @@ impl Texture2D {
     /// # }
     /// ```
     pub fn from_rgba8(width: u16, height: u16, bytes: &[u8]) -> Texture2D {
-        with_context(|context| {
-            let texture = context
-                .quad_context
-                .new_texture_from_rgba8(width, height, bytes);
-            let texture = context.textures.store_texture(texture);
-            let texture = Texture2D { texture };
-            texture.set_filter(context.default_filter_mode);
+        with_context(|context| Self::from_rgba8_inner(context, width, height, bytes))
+    }
 
-            context.texture_batcher.add_unbatched(&texture);
+    pub(crate) fn from_rgba8_inner(
+        context: &mut Context,
+        width: u16,
+        height: u16,
+        bytes: &[u8],
+    ) -> Texture2D {
+        let texture = context
+            .quad_context
+            .new_texture_from_rgba8(width, height, bytes);
+        let texture = context.textures.store_texture(texture);
+        let texture = Texture2D { texture };
+        texture.set_filter_inner(context, context.default_filter_mode);
 
-            texture
-        })
+        context.texture_batcher.add_unbatched(&texture);
+
+        texture
     }
 
     /// Uploads [Image] data to this texture.
@@ -848,18 +855,24 @@ impl Texture2D {
     /// # }
     /// ```
     pub fn set_filter(&self, filter_mode: FilterMode) {
-        with_quad_context(|ctx| {
-            ctx.texture_set_filter(
-                self.raw_miniquad_id(),
-                filter_mode,
-                miniquad::MipmapFilterMode::None,
-            );
+        with_context(|ctx| {
+            self.set_filter_inner(ctx, filter_mode);
         });
+    }
+
+    pub(crate) fn set_filter_inner(&self, ctx: &mut Context, filter_mode: FilterMode) {
+        let id = self.raw_miniquad_id_inner(ctx);
+        ctx.quad_context
+            .texture_set_filter(id, filter_mode, miniquad::MipmapFilterMode::None);
     }
 
     /// Returns the handle for this texture.
     pub fn raw_miniquad_id(&self) -> miniquad::TextureId {
-        with_context(|context| context.raw_miniquad_id(&self.texture))
+        with_context(|context| self.raw_miniquad_id_inner(context))
+    }
+
+    pub(crate) fn raw_miniquad_id_inner(&self, context: &mut Context) -> miniquad::TextureId {
+        context.raw_miniquad_id(&self.texture)
     }
 
     /// Updates this texture from the screen.
