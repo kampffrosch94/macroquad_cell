@@ -40,7 +40,6 @@ quad-snd = { version = "0.2", optional = true }
 [dev-dependencies]
 macroquad-particles = { path = "./particles" }
 macroquad-tiled = { path = "./tiled" }
-macroquad-profiler = { path = "./profiler" }
 macroquad-platformer = { path = "./physics-platformer" }
 
 # workaround to fix the examples
