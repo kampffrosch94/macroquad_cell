@@ -500,6 +500,13 @@ fn get_context() -> &'static mut Context {
     unsafe { CONTEXT.as_mut().unwrap_or_else(|| panic!()) }
 }
 
+fn with_context<R, F>(f: F) -> R
+where
+    F: FnOnce(&mut Context) -> R,
+{
+    f(get_context())
+}
+
 fn get_quad_context() -> &'static mut dyn miniquad::RenderingBackend {
     thread_assert::same_thread();
 
