@@ -12,6 +12,7 @@
 //! This will draw a label and a button one after each other right on top of the
 //! screen.
 
+/*
 pub mod canvas;
 mod clipboard;
 #[macro_use]
@@ -1431,3 +1432,5 @@ void main() {
         return in.color * tex.sample(texSmplr, in.uv);
     }"#;
 }
+
+*/

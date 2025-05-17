@@ -151,7 +151,7 @@ use crate::{
     color::{colors::*, Color},
     quad_gl::QuadGl,
     texture::TextureHandle,
-    ui::ui_context::UiContext,
+    //ui::ui_context::UiContext,
 };
 
 use glam::{vec2, Mat4, Vec2};
@@ -206,7 +206,7 @@ struct Context {
     gl: QuadGl,
     camera_matrix: Option<Mat4>,
 
-    ui_context: UiContext,
+    //ui_context: UiContext,
     coroutines_context: experimental::coroutines::CoroutinesContext,
     fonts_storage: text::FontsStorage,
 
@@ -350,7 +350,7 @@ impl Context {
                 draw_call_index_capacity,
             ),
 
-            ui_context: UiContext::new(&mut *ctx, screen_width, screen_height),
+            //ui_context: UiContext::new(&mut *ctx, screen_width, screen_height),
             fonts_storage: text::FontsStorage::new(&mut *ctx),
             texture_batcher: texture::Batcher::new(&mut *ctx),
             camera_stack: vec![],
@@ -402,7 +402,7 @@ impl Context {
     fn begin_frame(&mut self) {
         telemetry::begin_gpu_query("GPU");
 
-        self.ui_context.process_input();
+        //self.ui_context.process_input();
 
         let color = Self::DEFAULT_BG_COLOR;
 
@@ -415,7 +415,7 @@ impl Context {
 
         self.perform_render_passes();
 
-        self.ui_context.draw(get_quad_context(), &mut self.gl);
+        //self.ui_context.draw(get_quad_context(), &mut self.gl);
         let screen_mat = self.pixel_perfect_projection_matrix();
         self.gl.draw(get_quad_context(), screen_mat);
 
