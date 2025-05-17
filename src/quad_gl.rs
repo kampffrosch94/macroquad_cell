@@ -5,7 +5,7 @@ use miniquad::*;
 pub use miniquad::{FilterMode, TextureId as MiniquadTexture, UniformDesc};
 
 use crate::{
-    color::Color, logging::warn, telemetry, texture::Texture2D, tobytes::ToBytes, with_context,
+    color::Color, logging::warn, texture::Texture2D, tobytes::ToBytes, with_context,
     Error,
 };
 
@@ -791,7 +791,7 @@ impl QuadGl {
             ctx.end_render_pass();
 
             if dc.capture {
-                telemetry::track_drawcall(&pipeline.pipeline, bindings, dc.indices_count);
+                // telemetry::track_drawcall(&pipeline.pipeline, bindings, dc.indices_count);
             }
 
             dc.vertices_count = 0;
